@@ -173,7 +173,7 @@ export const CURATED_LEAGUES: CuratedLeagueConfig[] = [
     },
   },
   {
-    shortcut: 'unl',
+    shortcut: 'nla',
     name: 'UEFA Nations League',
     shortLabel: 'Nations League',
     country: 'Europa',
