@@ -1,13 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
   CheckCircle2,
   Database,
   Download,
   ExternalLink,
   Moon,
   RefreshCw,
+  RotateCcw,
   SlidersHorizontal,
   Smartphone,
+  Star,
   Sun,
   Monitor,
   Trash2,
@@ -23,6 +27,11 @@ export const SettingsPage: React.FC = () => {
     setTheme,
     homeLeagues,
     toggleHomeLeague,
+    leagueOrder,
+    moveLeague,
+    resetLeagueOrder,
+    pinFavoriteLeaguesFirst,
+    setPinFavoriteLeaguesFirst,
     refreshIntervalSec,
     setRefreshIntervalSec,
     canInstallPwa,
@@ -43,6 +52,14 @@ export const SettingsPage: React.FC = () => {
     return () => window.clearInterval(id);
   }, []);
 
+  const orderedLeagues = useMemo(() => {
+    const idx = (sc: string) => {
+      const i = leagueOrder.findIndex((o) => o.toLowerCase() === sc.toLowerCase());
+      return i === -1 ? 999 : i;
+    };
+    return [...CURATED_LEAGUES].sort((a, b) => idx(a.shortcut) - idx(b.shortcut));
+  }, [leagueOrder]);
+
   const handleClearCache = () => {
     clearApiCache();
     setTelemetry(getApiTelemetry());
@@ -50,7 +67,11 @@ export const SettingsPage: React.FC = () => {
     setTimeout(() => setCacheCleared(false), 2500);
   };
 
-  const THEME_OPTIONS: { id: ThemeMode; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  const THEME_OPTIONS: {
+    id: ThemeMode;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }[] = [
     { id: 'dark', label: 'Dunkel', icon: Moon },
     { id: 'light', label: 'Hell', icon: Sun },
     { id: 'system', label: 'System', icon: Monitor },
@@ -64,7 +85,7 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <div className="flex flex-col">
-      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#0B0D10]/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
+      <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0B0D10]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
         <div className="px-4 h-14 flex items-center gap-2">
           <SlidersHorizontal className="w-5 h-5 text-emerald-600 dark:text-[#C8FF00]" />
           <h1 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">
@@ -170,30 +191,90 @@ export const SettingsPage: React.FC = () => {
           </div>
         </section>
 
-        {/* Home Feed Leagues */}
+        {/* Home Feed Leagues & Custom Sorting */}
         <section className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] p-4 space-y-3">
-          <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-            Startseiten-Ligen (Spiele-Tab)
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {CURATED_LEAGUES.map((l) => {
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+              Startseiten-Ligen & Sortierung
+            </h2>
+            <button
+              type="button"
+              onClick={resetLeagueOrder}
+              className="text-[11px] font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white inline-flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" /> Reset
+            </button>
+          </div>
+
+          <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0B0D10] text-xs font-semibold cursor-pointer">
+            <span className="flex items-center gap-1.5">
+              <Star className="w-3.5 h-3.5 text-amber-500 dark:text-[#C8FF00] fill-current" />
+              Favoriten-Ligen immer ganz oben
+            </span>
+            <input
+              type="checkbox"
+              checked={pinFavoriteLeaguesFirst}
+              onChange={(e) => setPinFavoriteLeaguesFirst(e.target.checked)}
+              className="accent-emerald-500 w-4 h-4"
+            />
+          </label>
+
+          <div className="divide-y divide-slate-100 dark:divide-white/[0.06] rounded-xl border border-slate-100 dark:border-white/[0.06] overflow-hidden">
+            {orderedLeagues.map((l, idx) => {
               const active = homeLeagues.some(
                 (s) => s.toLowerCase() === l.shortcut.toLowerCase()
               );
               return (
-                <button
+                <div
                   key={l.shortcut}
-                  type="button"
-                  onClick={() => toggleHomeLeague(l.shortcut)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 border transition-all ${
-                    active
-                      ? 'bg-emerald-600/15 dark:bg-[#C8FF00]/15 text-emerald-700 dark:text-[#C8FF00] border-emerald-500/40 dark:border-[#C8FF00]/40'
-                      : 'bg-slate-50 dark:bg-[#0B0D10] text-slate-500 border-slate-200/80 dark:border-white/[0.08]'
-                  }`}
+                  className="px-3 py-2 flex items-center justify-between gap-2 bg-white dark:bg-[#14181F]"
                 >
-                  <span>{l.flag}</span>
-                  <span>{l.shortLabel}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleHomeLeague(l.shortcut)}
+                    className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={active}
+                      readOnly
+                      className="accent-emerald-500 w-4 h-4 pointer-events-none shrink-0"
+                    />
+                    <span className="w-5 text-[11px] font-black tabular-nums text-slate-400">
+                      {idx + 1}.
+                    </span>
+                    <span>{l.flag}</span>
+                    <span
+                      className={`text-xs font-bold truncate ${
+                        active
+                          ? 'text-slate-900 dark:text-white'
+                          : 'text-slate-400 line-through'
+                      }`}
+                    >
+                      {l.shortLabel}
+                    </span>
+                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={() => moveLeague(l.shortcut, 'up')}
+                      aria-label={`${l.shortLabel} nach oben`}
+                      className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === orderedLeagues.length - 1}
+                      onClick={() => moveLeague(l.shortcut, 'down')}
+                      aria-label={`${l.shortLabel} nach unten`}
+                      className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
               );
             })}
           </div>

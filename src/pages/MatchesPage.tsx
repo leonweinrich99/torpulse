@@ -1,21 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Calendar,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   Layers,
   Radio,
   RefreshCw,
   Search,
   Sparkles,
+  Star,
+  X,
 } from 'lucide-react';
 import { openLigaApi } from '../api/openligadb';
-import { CURATED_LEAGUES, getCuratedLeague } from '../config/leagues';
+import { getCuratedLeague } from '../config/leagues';
 import { useAppState } from '../context/AppStateContext';
-import type { Group, Match } from '../types/openligadb';
+import type { Match } from '../types/openligadb';
 import {
   deriveMatchScore,
   generateDateStrip,
@@ -40,15 +43,24 @@ interface LeagueMatchBundle {
 
 export const MatchesPage: React.FC = () => {
   const navigate = useNavigate();
-  const { homeLeagues, favoriteLeagues, refreshIntervalSec } = useAppState();
+  const {
+    homeLeagues,
+    favoriteLeagues,
+    leagueOrder,
+    moveLeague,
+    pinFavoriteLeaguesFirst,
+    setPinFavoriteLeaguesFirst,
+    isFavoriteLeague,
+    refreshIntervalSec,
+  } = useAppState();
 
   const [feedMode, setFeedMode] = useState<FeedMode>('matchday');
   const [liveOnly, setLiveOnly] = useState(false);
-  const [selectedLeague, setSelectedLeague] = useState<string>('all');
+  const [sortSheetOpen, setSortSheetOpen] = useState(false);
   const [selectedDateKey, setSelectedDateKey] = useState<string>(() => toLocalDateKey(new Date()));
   const [collapsedLeagues, setCollapsedLeagues] = useState<Record<string, boolean>>({});
 
-  // Data state for "all active leagues current matchday" + date mode
+  // Data state for all active leagues
   const [bundles, setBundles] = useState<LeagueMatchBundle[]>([]);
   const [seasonMatchesByLeague, setSeasonMatchesByLeague] = useState<Record<string, Match[]>>({});
   const [loading, setLoading] = useState(true);
@@ -57,19 +69,40 @@ export const MatchesPage: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  // Single-league matchday explorer state (when a specific league pill is picked)
-  const [singleGroups, setSingleGroups] = useState<Group[]>([]);
-  const [singleGroupOrderId, setSingleGroupOrderId] = useState<number | null>(null);
-  const [singleMatches, setSingleMatches] = useState<Match[]>([]);
-  const [singleLoading, setSingleLoading] = useState(false);
-
   const lastChangeHashRef = useRef<Record<string, string>>({});
   const dateStripRef = useRef<HTMLDivElement>(null);
 
+  // Ordered active shortcuts respecting custom leagueOrder + optional favorite pinning
   const activeShortcuts = useMemo(() => {
-    const merged = Array.from(new Set([...favoriteLeagues, ...homeLeagues]));
-    return merged.length ? merged : ['bl1', 'bl2', 'bl3', 'dfb', 'ucl'];
-  }, [favoriteLeagues, homeLeagues]);
+    const rawSet = new Set<string>();
+    const combined: string[] = [];
+    for (const sc of [...favoriteLeagues, ...homeLeagues]) {
+      const lower = sc.toLowerCase();
+      if (!rawSet.has(lower)) {
+        rawSet.add(lower);
+        combined.push(sc);
+      }
+    }
+    const list = combined.length ? combined : ['bl1', 'bl2', 'bl3', 'dfb', 'ucl'];
+
+    const orderIndex = (sc: string) => {
+      const idx = leagueOrder.findIndex((o) => o.toLowerCase() === sc.toLowerCase());
+      return idx === -1 ? 999 : idx;
+    };
+    const favIndex = (sc: string) =>
+      favoriteLeagues.findIndex((f) => f.toLowerCase() === sc.toLowerCase());
+
+    return [...list].sort((a, b) => {
+      if (pinFavoriteLeaguesFirst) {
+        const fa = favIndex(a);
+        const fb = favIndex(b);
+        if (fa !== -1 && fb === -1) return -1;
+        if (fa === -1 && fb !== -1) return 1;
+        if (fa !== -1 && fb !== -1) return fa - fb;
+      }
+      return orderIndex(a) - orderIndex(b);
+    });
+  }, [favoriteLeagues, homeLeagues, leagueOrder, pinFavoriteLeaguesFirst]);
 
   const dateStrip = useMemo(() => generateDateStrip(new Date(), 7), []);
 
@@ -133,7 +166,7 @@ export const MatchesPage: React.FC = () => {
     fetchAllCurrentBundles(false);
   }, [fetchAllCurrentBundles]);
 
-  // Load full season matches lazily when entering Date Mode so every day (+/- 7d or any date) has matches!
+  // Load full season matches lazily when entering Date Mode
   useEffect(() => {
     if (feedMode !== 'date') return;
     let cancelled = false;
@@ -164,78 +197,11 @@ export const MatchesPage: React.FC = () => {
     };
   }, [feedMode, activeShortcuts, seasonMatchesByLeague]);
 
-  // Single-league matchday mode loader
-  useEffect(() => {
-    if (selectedLeague === 'all') {
-      setSingleGroups([]);
-      setSingleGroupOrderId(null);
-      setSingleMatches([]);
-      return;
-    }
-
-    let cancelled = false;
-    (async () => {
-      setSingleLoading(true);
-      try {
-        const cfg = getCuratedLeague(selectedLeague);
-        const season = cfg?.season ?? 2026;
-        const [currentGroup, groups, currentMatches] = await Promise.all([
-          openLigaApi.getCurrentGroup(selectedLeague).catch(() => null),
-          openLigaApi.getAvailableGroups(selectedLeague, season).catch(() => []),
-          openLigaApi.getCurrentMatchdayMatches(selectedLeague),
-        ]);
-        if (cancelled) return;
-        const sortedGroups = [...groups].sort((a, b) => a.groupOrderID - b.groupOrderID);
-        setSingleGroups(sortedGroups);
-        const orderId =
-          currentGroup?.groupOrderID ??
-          currentMatches[0]?.group?.groupOrderID ??
-          sortedGroups[0]?.groupOrderID ??
-          1;
-        setSingleGroupOrderId(orderId);
-        setSingleMatches(
-          [...currentMatches].sort(
-            (a, b) => (getKickoffDate(a)?.getTime() ?? 0) - (getKickoffDate(b)?.getTime() ?? 0)
-          )
-        );
-      } catch {
-        // fallback handled by empty state
-      } finally {
-        if (!cancelled) setSingleLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedLeague]);
-
-  const loadSpecificMatchday = useCallback(
-    async (shortcut: string, groupOrderId: number) => {
-      const cfg = getCuratedLeague(shortcut);
-      const season = cfg?.season ?? 2026;
-      setSingleGroupOrderId(groupOrderId);
-      setSingleLoading(true);
-      try {
-        const data = await openLigaApi.getMatchdayMatches(shortcut, season, groupOrderId);
-        setSingleMatches(
-          [...data].sort(
-            (a, b) => (getKickoffDate(a)?.getTime() ?? 0) - (getKickoffDate(b)?.getTime() ?? 0)
-          )
-        );
-      } finally {
-        setSingleLoading(false);
-      }
-    },
-    []
-  );
-
   // Smart change-detection polling using OpenLigaDB /getlastchangedate
   useEffect(() => {
     if (!refreshIntervalSec || refreshIntervalSec <= 0 || !bundles.length) return;
 
     const timer = window.setInterval(async () => {
-      // Check if any match is currently live or starting within 15 min
       const hasActiveOrSoon = bundles.some((b) =>
         b.matches.some((m) => {
           const d = deriveMatchScore(m, Date.now());
@@ -272,7 +238,7 @@ export const MatchesPage: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [refreshIntervalSec, bundles, fetchAllCurrentBundles]);
 
-  // Compute all matches across bundles for live count
+  // Live count across all active leagues
   const liveCount = useMemo(() => {
     let count = 0;
     for (const b of bundles) {
@@ -284,13 +250,14 @@ export const MatchesPage: React.FC = () => {
     return count;
   }, [bundles, nowMs]);
 
-  // Filter bundles for Matchday Mode vs Date Mode
+  // Display bundles in user-configured order
   const displayedBundles = useMemo<LeagueMatchBundle[]>(() => {
     if (feedMode === 'date') {
       const grouped: LeagueMatchBundle[] = [];
       for (const sc of activeShortcuts) {
         const cfg = getCuratedLeague(sc);
-        const allSeason = seasonMatchesByLeague[sc] ?? bundles.find((b) => b.shortcut === sc)?.matches ?? [];
+        const allSeason =
+          seasonMatchesByLeague[sc] ?? bundles.find((b) => b.shortcut === sc)?.matches ?? [];
         const dayMatches = allSeason
           .filter((m) => {
             const k = getKickoffDate(m);
@@ -302,7 +269,9 @@ export const MatchesPage: React.FC = () => {
             const s = deriveMatchScore(m, nowMs);
             return s.status === 'live' || s.status === 'halftime';
           })
-          .sort((a, b) => (getKickoffDate(a)?.getTime() ?? 0) - (getKickoffDate(b)?.getTime() ?? 0));
+          .sort(
+            (a, b) => (getKickoffDate(a)?.getTime() ?? 0) - (getKickoffDate(b)?.getTime() ?? 0)
+          );
 
         if (dayMatches.length > 0) {
           grouped.push({
@@ -319,25 +288,33 @@ export const MatchesPage: React.FC = () => {
       return grouped;
     }
 
-    // Matchday mode
-    return bundles
-      .map((b) => {
-        const filtered = liveOnly
-          ? b.matches.filter((m) => {
-              const s = deriveMatchScore(m, nowMs);
-              return s.status === 'live' || s.status === 'halftime';
-            })
-          : b.matches;
-        return { ...b, matches: filtered };
-      })
-      .filter((b) => b.matches.length > 0);
+    // Matchday mode: preserve exact user-configured activeShortcuts order
+    const byShortcut = new Map<string, LeagueMatchBundle>();
+    for (const b of bundles) {
+      byShortcut.set(b.shortcut.toLowerCase(), b);
+    }
+
+    const ordered: LeagueMatchBundle[] = [];
+    for (const sc of activeShortcuts) {
+      const b = byShortcut.get(sc.toLowerCase());
+      if (!b) continue;
+      const filtered = liveOnly
+        ? b.matches.filter((m) => {
+            const s = deriveMatchScore(m, nowMs);
+            return s.status === 'live' || s.status === 'halftime';
+          })
+        : b.matches;
+      if (filtered.length > 0) {
+        ordered.push({ ...b, matches: filtered });
+      }
+    }
+    return ordered;
   }, [feedMode, activeShortcuts, seasonMatchesByLeague, bundles, selectedDateKey, liveOnly, nowMs]);
 
   const toggleCollapse = (shortcut: string) => {
     setCollapsedLeagues((prev) => ({ ...prev, [shortcut]: !prev[shortcut] }));
   };
 
-  // Scroll today pill into view in date mode
   useEffect(() => {
     if (feedMode === 'date' && dateStripRef.current) {
       const el = dateStripRef.current.querySelector('[data-active="true"]');
@@ -345,12 +322,10 @@ export const MatchesPage: React.FC = () => {
     }
   }, [feedMode]);
 
-  const currentGroupIdx = singleGroups.findIndex((g) => g.groupOrderID === singleGroupOrderId);
-
   return (
     <div className="flex flex-col">
-      {/* Sticky OneFootball-style Top Header */}
-      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#0B0D10]/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
+      {/* Sticky OneFootball-style Top Header with generous iOS top blur clearance */}
+      <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0B0D10]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
         <div className="px-4 h-14 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#C8FF00] to-[#00E676] flex items-center justify-center shadow-sm">
@@ -369,7 +344,7 @@ export const MatchesPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1.5">
-            {/* LIVE Filter Pill */}
+            {/* LIVE Toggle Pill */}
             <button
               type="button"
               onClick={() => setLiveOnly((v) => !v)}
@@ -390,9 +365,20 @@ export const MatchesPage: React.FC = () => {
                 }`}
               />
               <span>LIVE</span>
-              {liveCount > 0 && (
-                <span className="tabular-nums opacity-90">({liveCount})</span>
-              )}
+              {liveCount > 0 && <span className="tabular-nums opacity-90">({liveCount})</span>}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSortSheetOpen((v) => !v)}
+              aria-label="Ligen-Reihenfolge anpassen"
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                sortSheetOpen
+                  ? 'bg-slate-950 dark:bg-[#C8FF00] text-white dark:text-black'
+                  : 'bg-slate-100 dark:bg-[#1B212B] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/10'
+              }`}
+            >
+              <ArrowUpDown className="w-4 h-4" />
             </button>
 
             <button
@@ -416,7 +402,7 @@ export const MatchesPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Mode Switcher + League / Date Strip */}
+        {/* Mode Switcher (Spieltag / Kalender) */}
         <div className="px-4 pb-2.5 flex items-center justify-between gap-2">
           <div className="inline-flex p-0.5 rounded-xl bg-slate-100 dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.07]">
             <button
@@ -433,10 +419,7 @@ export const MatchesPage: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setFeedMode('date');
-                setSelectedLeague('all');
-              }}
+              onClick={() => setFeedMode('date')}
               className={`px-3 py-1 rounded-[10px] text-xs font-bold flex items-center gap-1.5 transition-all ${
                 feedMode === 'date'
                   ? 'bg-white dark:bg-[#232B38] text-slate-950 dark:text-white shadow-xs'
@@ -462,41 +445,8 @@ export const MatchesPage: React.FC = () => {
           )}
         </div>
 
-        {/* Sub-strip: League Pills (Matchday mode) OR Date Carousel (Date mode) */}
-        {feedMode === 'matchday' ? (
-          <div className="px-4 pb-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar">
-            <button
-              type="button"
-              onClick={() => setSelectedLeague('all')}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                selectedLeague === 'all'
-                  ? 'bg-slate-950 dark:bg-[#C8FF00] text-white dark:text-black'
-                  : 'bg-slate-100 dark:bg-[#14181F] text-slate-700 dark:text-slate-300 border border-slate-200/70 dark:border-white/[0.07]'
-              }`}
-            >
-              Alle Ligen
-            </button>
-            {activeShortcuts.map((sc) => {
-              const cfg = getCuratedLeague(sc);
-              const active = selectedLeague === sc;
-              return (
-                <button
-                  key={sc}
-                  type="button"
-                  onClick={() => setSelectedLeague(sc)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-all ${
-                    active
-                      ? 'bg-slate-950 dark:bg-[#C8FF00] text-white dark:text-black'
-                      : 'bg-slate-100 dark:bg-[#14181F] text-slate-700 dark:text-slate-300 border border-slate-200/70 dark:border-white/[0.07]'
-                  }`}
-                >
-                  <span>{cfg?.flag || '⚽'}</span>
-                  <span>{cfg?.shortLabel || sc.toUpperCase()}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
+        {/* Date Carousel only in Kalender mode */}
+        {feedMode === 'date' && (
           <div
             ref={dateStripRef}
             className="px-4 pb-2.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar"
@@ -518,9 +468,7 @@ export const MatchesPage: React.FC = () => {
                   <span className="text-[10px] uppercase tracking-wider opacity-80">
                     {item.isToday ? 'Heute' : item.dayShort}
                   </span>
-                  <span className="text-sm font-extrabold tabular-nums mt-0.5">
-                    {item.dayNum}
-                  </span>
+                  <span className="text-sm font-extrabold tabular-nums mt-0.5">{item.dayNum}</span>
                 </button>
               );
             })}
@@ -530,6 +478,106 @@ export const MatchesPage: React.FC = () => {
 
       {/* Main Feed Content */}
       <div className="px-3.5 py-3.5 space-y-3.5">
+        {/* Quick Inline Sort Panel */}
+        {sortSheetOpen && (
+          <section className="rounded-2xl bg-white dark:bg-[#14181F] border border-emerald-500/35 dark:border-[#C8FF00]/30 p-3.5 space-y-3 animate-fade-up shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 dark:text-white">
+                  Ligen-Reihenfolge anpassen
+                </h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Sortiere deine Ligen für den Spiele-Feed
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSortSheetOpen(false)}
+                aria-label="Sortierung schließen"
+                className="w-7 h-7 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0B0D10] text-xs font-semibold cursor-pointer">
+              <span className="flex items-center gap-1.5">
+                <Star className="w-3.5 h-3.5 text-amber-500 dark:text-[#C8FF00] fill-current" />
+                Favoriten-Ligen immer zuerst
+              </span>
+              <input
+                type="checkbox"
+                checked={pinFavoriteLeaguesFirst}
+                onChange={(e) => setPinFavoriteLeaguesFirst(e.target.checked)}
+                className="accent-emerald-500 w-4 h-4"
+              />
+            </label>
+
+            <div className="divide-y divide-slate-100 dark:divide-white/[0.06] max-h-60 overflow-y-auto rounded-xl border border-slate-100 dark:border-white/[0.06]">
+              {activeShortcuts.map((sc, idx) => {
+                const cfg = getCuratedLeague(sc);
+                const fav = isFavoriteLeague(sc);
+                return (
+                  <div
+                    key={sc}
+                    className="px-3 py-2 flex items-center justify-between gap-2 bg-white dark:bg-[#14181F]"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-5 text-[11px] font-black tabular-nums text-slate-400">
+                        {idx + 1}.
+                      </span>
+                      <span>{cfg?.flag || '⚽'}</span>
+                      <span className="text-xs font-bold truncate text-slate-900 dark:text-white">
+                        {cfg?.shortLabel || sc.toUpperCase()}
+                      </span>
+                      {fav && (
+                        <Star className="w-3 h-3 text-amber-500 dark:text-[#C8FF00] fill-current shrink-0" />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => moveLeague(sc, 'up')}
+                        aria-label={`${cfg?.shortLabel || sc} nach oben`}
+                        className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                      >
+                        <ArrowUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === activeShortcuts.length - 1}
+                        onClick={() => moveLeague(sc, 'down')}
+                        aria-label={`${cfg?.shortLabel || sc} nach unten`}
+                        className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                      >
+                        <ArrowDown className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between pt-0.5 text-[11px]">
+              <button
+                type="button"
+                onClick={() => navigate('/leagues')}
+                className="font-bold text-emerald-600 dark:text-[#C8FF00] hover:underline"
+              >
+                Alle Ligen verwalten →
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/favorites')}
+                className="font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              >
+                Favoriten sortieren →
+              </button>
+            </div>
+          </section>
+        )}
+
         {error && (
           <div className="rounded-2xl bg-rose-500/10 border border-rose-500/30 p-4 text-sm text-rose-600 dark:text-rose-400 flex items-center justify-between gap-3">
             <span>{error}</span>
@@ -543,118 +591,7 @@ export const MatchesPage: React.FC = () => {
           </div>
         )}
 
-        {/* Single-league Matchday Drilldown inside Home Feed */}
-        {feedMode === 'matchday' && selectedLeague !== 'all' ? (
-          <div className="space-y-3 animate-fade-up">
-            {(() => {
-              const cfg = getCuratedLeague(selectedLeague) ?? CURATED_LEAGUES[0];
-              const season = cfg?.season ?? 2026;
-              return (
-                <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden">
-                  <div className="px-3.5 py-3 border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-lg">{cfg?.flag || '⚽'}</span>
-                      <div className="min-w-0">
-                        <h2 className="text-sm font-extrabold truncate text-slate-950 dark:text-white">
-                          {cfg?.name || selectedLeague.toUpperCase()}
-                        </h2>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Saison {season}/{String(season + 1).slice(-2)}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/league/${encodeURIComponent(selectedLeague)}/${season}`)}
-                      className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#1B212B] text-xs font-bold text-slate-900 dark:text-[#C8FF00] hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
-                    >
-                      Tabelle & mehr →
-                    </button>
-                  </div>
-
-                  {/* Matchday Navigator */}
-                  {singleGroups.length > 0 && (
-                    <div className="px-3 py-2 border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between bg-slate-50/70 dark:bg-white/[0.02]">
-                      <button
-                        type="button"
-                        disabled={currentGroupIdx <= 0}
-                        onClick={() =>
-                          currentGroupIdx > 0 &&
-                          loadSpecificMatchday(
-                            selectedLeague,
-                            singleGroups[currentGroupIdx - 1].groupOrderID
-                          )
-                        }
-                        className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 hover:bg-slate-200/70 dark:hover:bg-white/10"
-                        aria-label="Vorheriger Spieltag"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
-
-                      <select
-                        value={singleGroupOrderId ?? ''}
-                        onChange={(e) =>
-                          loadSpecificMatchday(selectedLeague, Number(e.target.value))
-                        }
-                        aria-label="Spieltag wählen"
-                        className="bg-transparent text-xs font-extrabold text-center text-slate-900 dark:text-white focus:outline-none cursor-pointer px-2 py-1"
-                      >
-                        {singleGroups.map((g) => (
-                          <option
-                            key={g.groupID}
-                            value={g.groupOrderID}
-                            className="bg-white dark:bg-[#14181F] text-slate-900 dark:text-white"
-                          >
-                            {g.groupName}
-                          </option>
-                        ))}
-                      </select>
-
-                      <button
-                        type="button"
-                        disabled={currentGroupIdx < 0 || currentGroupIdx >= singleGroups.length - 1}
-                        onClick={() =>
-                          currentGroupIdx >= 0 &&
-                          currentGroupIdx < singleGroups.length - 1 &&
-                          loadSpecificMatchday(
-                            selectedLeague,
-                            singleGroups[currentGroupIdx + 1].groupOrderID
-                          )
-                        }
-                        className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 hover:bg-slate-200/70 dark:hover:bg-white/10"
-                        aria-label="Nächster Spieltag"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-
-                  {singleLoading ? (
-                    <div className="p-3">
-                      <LeagueGroupSkeleton />
-                    </div>
-                  ) : singleMatches.length === 0 ? (
-                    <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                      Keine Spiele für diesen Spieltag gefunden.
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
-                      {singleMatches
-                        .filter((m) => {
-                          if (!liveOnly) return true;
-                          const s = deriveMatchScore(m, nowMs);
-                          return s.status === 'live' || s.status === 'halftime';
-                        })
-                        .map((m) => (
-                          <MatchCard key={m.matchID} match={m} showDate nowMs={nowMs} />
-                        ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        ) : loading ? (
+        {loading ? (
           <div className="space-y-3.5">
             <LeagueGroupSkeleton />
             <LeagueGroupSkeleton />
@@ -666,9 +603,7 @@ export const MatchesPage: React.FC = () => {
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                {liveOnly
-                  ? 'Aktuell keine Live-Spiele'
-                  : 'Keine Spiele an diesem Tag'}
+                {liveOnly ? 'Aktuell keine Live-Spiele' : 'Keine Spiele an diesem Tag'}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
                 {liveOnly
@@ -720,9 +655,7 @@ export const MatchesPage: React.FC = () => {
                       }
                       className="flex items-center gap-2.5 min-w-0 flex-1 text-left group"
                     >
-                      <span
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 bg-white dark:bg-[#1B212B] border border-slate-200/70 dark:border-white/[0.08]"
-                      >
+                      <span className="w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 bg-white dark:bg-[#1B212B] border border-slate-200/70 dark:border-white/[0.08]">
                         {bundle.flag}
                       </span>
                       <div className="min-w-0">

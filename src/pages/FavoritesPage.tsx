@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Star, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Check,
+  GripVertical,
+  Plus,
+  Star,
+  Trash2,
+} from 'lucide-react';
 import { openLigaApi } from '../api/openligadb';
 import { getCuratedLeague } from '../config/leagues';
 import { useAppState } from '../context/AppStateContext';
@@ -16,15 +25,21 @@ export const FavoritesPage: React.FC = () => {
     favoriteTeams,
     toggleFavoriteTeam,
     isFavoriteTeam,
+    reorderFavoriteTeams,
+    moveFavoriteTeam,
     favoriteLeagues,
     toggleFavoriteLeague,
+    reorderFavoriteLeagues,
+    moveFavoriteLeague,
   } = useAppState();
 
+  const [sortMode, setSortMode] = useState(false);
+  const [dragTeamIdx, setDragTeamIdx] = useState<number | null>(null);
+  const [dragLeagueIdx, setDragLeagueIdx] = useState<number | null>(null);
   const [teamMatches, setTeamMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(false);
   const [suggestedTeams, setSuggestedTeams] = useState<Team[]>([]);
 
-  // Fetch suggested Bundesliga teams when user has < 3 favorite teams
   useEffect(() => {
     if (favoriteTeams.length >= 3) return;
     let cancelled = false;
@@ -39,7 +54,6 @@ export const FavoritesPage: React.FC = () => {
     };
   }, [favoriteTeams.length]);
 
-  // Fetch recent & upcoming matches for all followed teams
   useEffect(() => {
     if (!favoriteTeams.length) {
       setTeamMatches([]);
@@ -70,78 +84,195 @@ export const FavoritesPage: React.FC = () => {
     };
   }, [favoriteTeams]);
 
+  // Helper: prioritize matches by user's favorite team order on the same day
+  const teamPriority = useMemo(() => {
+    const map = new Map<number, number>();
+    favoriteTeams.forEach((t, i) => map.set(t.teamId, i));
+    return map;
+  }, [favoriteTeams]);
+
+  const getMatchTeamPriority = (m: Match) => {
+    const p1 = m.team1 ? (teamPriority.get(m.team1.teamId) ?? 999) : 999;
+    const p2 = m.team2 ? (teamPriority.get(m.team2.teamId) ?? 999) : 999;
+    return Math.min(p1, p2);
+  };
+
   const upcoming = useMemo(
     () =>
       teamMatches
         .filter((m) => !m.matchIsFinished)
-        .sort((a, b) => (getKickoffDate(a)?.getTime() ?? 0) - (getKickoffDate(b)?.getTime() ?? 0)),
-    [teamMatches]
+        .sort((a, b) => {
+          const da = getKickoffDate(a)?.getTime() ?? 0;
+          const db = getKickoffDate(b)?.getTime() ?? 0;
+          if (da !== db) return da - db;
+          return getMatchTeamPriority(a) - getMatchTeamPriority(b);
+        }),
+    [teamMatches, teamPriority]
   );
 
   const recent = useMemo(
     () =>
       teamMatches
         .filter((m) => m.matchIsFinished)
-        .sort((a, b) => (getKickoffDate(b)?.getTime() ?? 0) - (getKickoffDate(a)?.getTime() ?? 0)),
-    [teamMatches]
+        .sort((a, b) => {
+          const da = getKickoffDate(a)?.getTime() ?? 0;
+          const db = getKickoffDate(b)?.getTime() ?? 0;
+          if (db !== da) return db - da;
+          return getMatchTeamPriority(a) - getMatchTeamPriority(b);
+        }),
+    [teamMatches, teamPriority]
   );
+
+  const canSort = favoriteTeams.length > 1 || favoriteLeagues.length > 1;
 
   return (
     <div className="flex flex-col">
-      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#0B0D10]/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
-        <div className="px-4 h-14 flex items-center justify-between">
+      <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0B0D10]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
+        <div className="px-4 h-14 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Star className="w-5 h-5 text-amber-500 dark:text-[#C8FF00] fill-current" />
             <h1 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">
               Favoriten
             </h1>
           </div>
-          <button
-            type="button"
-            onClick={() => navigate('/search')}
-            className="px-3 py-1.5 rounded-full bg-slate-100 dark:bg-[#1B212B] text-xs font-bold flex items-center gap-1 text-slate-700 dark:text-slate-200"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Team finden
-          </button>
+
+          <div className="flex items-center gap-1.5">
+            {canSort && (
+              <button
+                type="button"
+                onClick={() => setSortMode((v) => !v)}
+                className={`h-8 px-3 rounded-full text-xs font-extrabold flex items-center gap-1.5 transition-all ${
+                  sortMode
+                    ? 'bg-slate-950 dark:bg-[#C8FF00] text-white dark:text-black'
+                    : 'bg-slate-100 dark:bg-[#1B212B] text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                {sortMode ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Fertig</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                    <span>Sortieren</span>
+                  </>
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => navigate('/search')}
+              className="h-8 px-3 rounded-full bg-slate-100 dark:bg-[#1B212B] text-xs font-bold flex items-center gap-1 text-slate-700 dark:text-slate-200"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Team
+            </button>
+          </div>
         </div>
       </header>
 
       <div className="px-3.5 py-4 space-y-5">
-        {/* Followed Teams Horizontal Strip */}
+        {sortMode && (
+          <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/30 dark:border-[#C8FF00]/30 px-3.5 py-2.5 text-xs font-semibold text-emerald-800 dark:text-[#C8FF00] animate-fade-up">
+            Lege deine eigene Reihenfolge für Lieblingsvereine und -wettbewerbe fest (Drag & Drop oder Pfeile).
+          </div>
+        )}
+
+        {/* Followed Teams */}
         <section className="space-y-2.5">
           <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 px-1">
             Meine Vereine ({favoriteTeams.length})
           </h2>
 
           {favoriteTeams.length > 0 ? (
-            <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1">
-              {favoriteTeams.map((t) => (
-                <div
-                  key={t.teamId}
-                  className="shrink-0 w-24 rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] p-2.5 flex flex-col items-center gap-1.5 relative group"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleFavoriteTeam(t)}
-                    aria-label={`${t.shortName} entfernen`}
-                    className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-400 hover:text-rose-500 opacity-80"
+            sortMode ? (
+              <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden divide-y divide-slate-100 dark:divide-white/[0.06] animate-fade-up">
+                {favoriteTeams.map((t, idx) => (
+                  <div
+                    key={t.teamId}
+                    draggable
+                    onDragStart={() => setDragTeamIdx(idx)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (dragTeamIdx !== null && dragTeamIdx !== idx) {
+                        reorderFavoriteTeams(dragTeamIdx, idx);
+                      }
+                      setDragTeamIdx(null);
+                    }}
+                    onDragEnd={() => setDragTeamIdx(null)}
+                    className="px-3 py-2.5 flex items-center justify-between gap-2.5 cursor-grab active:cursor-grabbing"
                   >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/team/${t.teamId}`, { state: { team: t } })}
-                    className="flex flex-col items-center gap-1.5 w-full pt-1"
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <GripVertical className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span className="w-5 text-xs font-black tabular-nums text-slate-400">
+                        {idx + 1}.
+                      </span>
+                      <TeamCrest src={t.teamIconUrl} name={t.teamName} size="sm" />
+                      <span className="text-sm font-bold text-slate-950 dark:text-white truncate">
+                        {t.teamName}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => moveFavoriteTeam(t.teamId, 'up')}
+                        aria-label={`${t.shortName} nach oben`}
+                        className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === favoriteTeams.length - 1}
+                        onClick={() => moveFavoriteTeam(t.teamId, 'down')}
+                        aria-label={`${t.shortName} nach unten`}
+                        className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                      >
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleFavoriteTeam(t)}
+                        aria-label={`${t.shortName} entfernen`}
+                        className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1">
+                {favoriteTeams.map((t) => (
+                  <div
+                    key={t.teamId}
+                    className="shrink-0 w-24 rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] p-2.5 flex flex-col items-center gap-1.5 relative group"
                   >
-                    <TeamCrest src={t.teamIconUrl} name={t.teamName} size="md" />
-                    <span className="text-[11px] font-bold text-slate-900 dark:text-white truncate w-full text-center">
-                      {t.shortName}
-                    </span>
-                  </button>
-                </div>
-              ))}
-            </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleFavoriteTeam(t)}
+                      aria-label={`${t.shortName} entfernen`}
+                      className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center text-slate-400 hover:text-rose-500 opacity-80"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/team/${t.teamId}`, { state: { team: t } })}
+                      className="flex flex-col items-center gap-1.5 w-full pt-1"
+                    >
+                      <TeamCrest src={t.teamIconUrl} name={t.teamName} size="md" />
+                      <span className="text-[11px] font-bold text-slate-900 dark:text-white truncate w-full text-center">
+                        {t.shortName}
+                      </span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )
           ) : (
             <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] p-5 text-center space-y-2">
               <p className="text-sm font-bold text-slate-900 dark:text-white">
@@ -155,7 +286,7 @@ export const FavoritesPage: React.FC = () => {
         </section>
 
         {/* Quick Onboarding Club Picker */}
-        {suggestedTeams.length > 0 && favoriteTeams.length < 3 && (
+        {suggestedTeams.length > 0 && favoriteTeams.length < 3 && !sortMode && (
           <section className="space-y-2.5">
             <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 px-1">
               Schnellauswahl Bundesliga
@@ -192,77 +323,142 @@ export const FavoritesPage: React.FC = () => {
           </section>
         )}
 
-        {/* Followed Leagues */}
+        {/* Followed Leagues (with custom sorting) */}
         {favoriteLeagues.length > 0 && (
           <section className="space-y-2">
             <h2 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 px-1">
               Meine Wettbewerbe ({favoriteLeagues.length})
             </h2>
-            <div className="flex flex-wrap gap-2">
-              {favoriteLeagues.map((sc) => {
-                const cfg = getCuratedLeague(sc);
-                return (
-                  <div
-                    key={sc}
-                    className="inline-flex items-center rounded-full bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden"
-                  >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigate(`/league/${encodeURIComponent(sc)}/${cfg?.season ?? 2026}`)
-                      }
-                      className="pl-3 pr-2 py-1.5 text-xs font-bold flex items-center gap-1.5 hover:text-emerald-600 dark:hover:text-[#C8FF00]"
+
+            {sortMode ? (
+              <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden divide-y divide-slate-100 dark:divide-white/[0.06] animate-fade-up">
+                {favoriteLeagues.map((sc, idx) => {
+                  const cfg = getCuratedLeague(sc);
+                  return (
+                    <div
+                      key={sc}
+                      draggable
+                      onDragStart={() => setDragLeagueIdx(idx)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => {
+                        if (dragLeagueIdx !== null && dragLeagueIdx !== idx) {
+                          reorderFavoriteLeagues(dragLeagueIdx, idx);
+                        }
+                        setDragLeagueIdx(null);
+                      }}
+                      onDragEnd={() => setDragLeagueIdx(null)}
+                      className="px-3 py-2.5 flex items-center justify-between gap-2.5 cursor-grab active:cursor-grabbing"
                     >
-                      <span>{cfg?.flag || '⚽'}</span>
-                      <span>{cfg?.shortLabel || sc.toUpperCase()}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleFavoriteLeague(sc)}
-                      aria-label={`${sc} entfernen`}
-                      className="pr-2.5 pl-1 py-1.5 text-slate-400 hover:text-rose-500"
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <GripVertical className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span className="w-5 text-xs font-black tabular-nums text-slate-400">
+                          {idx + 1}.
+                        </span>
+                        <span className="text-base">{cfg?.flag || '⚽'}</span>
+                        <span className="text-sm font-bold text-slate-950 dark:text-white truncate">
+                          {cfg?.name || sc.toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moveFavoriteLeague(sc, 'up')}
+                          aria-label={`${cfg?.shortLabel || sc} nach oben`}
+                          className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === favoriteLeagues.length - 1}
+                          onClick={() => moveFavoriteLeague(sc, 'down')}
+                          aria-label={`${cfg?.shortLabel || sc} nach unten`}
+                          className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleFavoriteLeague(sc)}
+                          aria-label={`${sc} entfernen`}
+                          className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {favoriteLeagues.map((sc) => {
+                  const cfg = getCuratedLeague(sc);
+                  return (
+                    <div
+                      key={sc}
+                      className="inline-flex items-center rounded-full bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden"
                     >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(`/league/${encodeURIComponent(sc)}/${cfg?.season ?? 2026}`)
+                        }
+                        className="pl-3 pr-2 py-1.5 text-xs font-bold flex items-center gap-1.5 hover:text-emerald-600 dark:hover:text-[#C8FF00]"
+                      >
+                        <span>{cfg?.flag || '⚽'}</span>
+                        <span>{cfg?.shortLabel || sc.toUpperCase()}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleFavoriteLeague(sc)}
+                        aria-label={`${sc} entfernen`}
+                        className="pr-2.5 pl-1 py-1.5 text-slate-400 hover:text-rose-500"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         )}
 
         {/* Matches for Followed Teams */}
-        {loading ? (
-          <LeagueGroupSkeleton />
-        ) : (
-          <>
-            {upcoming.length > 0 && (
-              <section className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden">
-                <div className="px-3.5 py-2.5 border-b border-slate-100 dark:border-white/[0.06] text-xs font-extrabold uppercase tracking-wider text-emerald-600 dark:text-[#C8FF00]">
-                  Kommende Spiele deiner Vereine
-                </div>
-                <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
-                  {upcoming.slice(0, 15).map((m) => (
-                    <MatchCard key={m.matchID} match={m} showLeagueBadge showDate />
-                  ))}
-                </div>
-              </section>
-            )}
+        {!sortMode &&
+          (loading ? (
+            <LeagueGroupSkeleton />
+          ) : (
+            <>
+              {upcoming.length > 0 && (
+                <section className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden">
+                  <div className="px-3.5 py-2.5 border-b border-slate-100 dark:border-white/[0.06] text-xs font-extrabold uppercase tracking-wider text-emerald-600 dark:text-[#C8FF00]">
+                    Kommende Spiele deiner Vereine
+                  </div>
+                  <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
+                    {upcoming.slice(0, 15).map((m) => (
+                      <MatchCard key={m.matchID} match={m} showLeagueBadge showDate />
+                    ))}
+                  </div>
+                </section>
+              )}
 
-            {recent.length > 0 && (
-              <section className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden">
-                <div className="px-3.5 py-2.5 border-b border-slate-100 dark:border-white/[0.06] text-xs font-extrabold uppercase tracking-wider text-slate-500">
-                  Letzte Ergebnisse deiner Vereine
-                </div>
-                <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
-                  {recent.slice(0, 15).map((m) => (
-                    <MatchCard key={m.matchID} match={m} showLeagueBadge showDate />
-                  ))}
-                </div>
-              </section>
-            )}
-          </>
-        )}
+              {recent.length > 0 && (
+                <section className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden">
+                  <div className="px-3.5 py-2.5 border-b border-slate-100 dark:border-white/[0.06] text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                    Letzte Ergebnisse deiner Vereine
+                  </div>
+                  <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
+                    {recent.slice(0, 15).map((m) => (
+                      <MatchCard key={m.matchID} match={m} showLeagueBadge showDate />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </>
+          ))}
       </div>
     </div>
   );

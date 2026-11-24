@@ -20,51 +20,59 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div className="min-h-dvh bg-[#F3F5F8] dark:bg-[#0B0D10] text-slate-900 dark:text-slate-100 flex flex-col">
+      {/* iOS Top Status Bar / Dynamic Island Translucent Blur Scrim */}
+      <div
+        aria-hidden="true"
+        className="fixed top-0 left-0 right-0 z-50 pointer-events-none ios-top-blur-scrim"
+      />
+
       {/* Main centered mobile-first column */}
       <div className="w-full max-w-2xl mx-auto flex-1 flex flex-col min-h-dvh bg-[#F3F5F8] dark:bg-[#0B0D10] md:border-x md:border-slate-200/70 md:dark:border-white/[0.06] relative">
         {!isOnline && (
-          <div className="sticky top-0 z-50 bg-amber-500 text-black text-xs font-bold px-3 py-1.5 flex items-center justify-center gap-1.5 pt-safe">
+          <div className="sticky top-0 z-50 bg-amber-500 text-black text-xs font-bold px-3 pb-1.5 flex items-center justify-center gap-1.5 pt-safe">
             <WifiOff className="w-3.5 h-3.5" />
             <span>Offline-Modus – zeige zwischengespeicherte Daten</span>
           </div>
         )}
 
-        <main className="flex-1 pb-24">{children}</main>
+        <main className="flex-1 pb-tabbar">{children}</main>
 
-        {/* Sticky OneFootball-style Bottom Navigation Bar */}
+        {/* Floating Apple Liquid Glass Bottom Tab Bar */}
         <nav
           aria-label="Hauptnavigation"
-          className="fixed bottom-0 left-0 right-0 z-40 flex justify-center pointer-events-none"
+          className="fixed bottom-0 left-0 right-0 z-40 flex justify-center pointer-events-none px-3"
+          style={{ paddingBottom: 'var(--ios-bottom-clearance)' }}
         >
-          <div className="w-full max-w-2xl pointer-events-auto bg-white/95 dark:bg-[#11151B]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-white/[0.08] pb-safe">
-            <div className="grid grid-cols-5 h-16">
+          <div className="w-full max-w-[460px] pointer-events-auto liquid-glass-bar rounded-[30px] p-1.5">
+            <div className="grid grid-cols-5 gap-1">
               {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
                 <NavLink
                   key={to}
                   to={to}
                   end={end}
                   className={({ isActive }) =>
-                    `flex flex-col items-center justify-center gap-1 text-[11px] font-semibold transition-colors relative ${
+                    `relative flex flex-col items-center justify-center gap-0.5 py-2 px-1 rounded-[24px] text-[10px] font-bold tracking-tight transition-all duration-300 select-none ${
                       isActive
-                        ? 'text-emerald-600 dark:text-[#C8FF00]'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                        ? 'liquid-glass-pill text-emerald-600 dark:text-[#C8FF00] scale-[1.02]'
+                        : 'text-slate-600 dark:text-slate-300/80 hover:text-slate-900 dark:hover:text-white active:scale-95'
                     }`
                   }
                 >
                   {({ isActive }) => (
                     <>
-                      {isActive && (
-                        <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[2.5px] rounded-b-full bg-emerald-600 dark:bg-[#C8FF00]" />
-                      )}
                       <div className="relative">
-                        <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.4]' : 'stroke-[1.9]'}`} />
+                        <Icon
+                          className={`w-[21px] h-[21px] transition-transform duration-300 ${
+                            isActive ? 'stroke-[2.4] -translate-y-[0.5px]' : 'stroke-[1.85]'
+                          }`}
+                        />
                         {to === '/favorites' && favoriteTeams.length > 0 && (
-                          <span className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-1 rounded-full bg-emerald-600 dark:bg-[#C8FF00] text-white dark:text-black text-[9px] font-black flex items-center justify-center leading-none">
+                          <span className="absolute -top-1 -right-2.5 min-w-[15px] h-[15px] px-1 rounded-full bg-emerald-600 dark:bg-[#C8FF00] text-white dark:text-black text-[9px] font-black flex items-center justify-center leading-none shadow-xs">
                             {favoriteTeams.length > 9 ? '9+' : favoriteTeams.length}
                           </span>
                         )}
                       </div>
-                      <span>{label}</span>
+                      <span className="leading-none mt-0.5">{label}</span>
                     </>
                   )}
                 </NavLink>

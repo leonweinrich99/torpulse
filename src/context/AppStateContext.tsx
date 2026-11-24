@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { DEFAULT_HOME_LEAGUES } from '../config/leagues';
+import { CURATED_LEAGUES, DEFAULT_HOME_LEAGUES } from '../config/leagues';
 import type { FavoriteTeam } from '../types/openligadb';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
@@ -9,6 +9,24 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+const DEFAULT_LEAGUE_ORDER = CURATED_LEAGUES.map((l) => l.shortcut);
+
+function moveItem<T>(list: T[], fromIndex: number, toIndex: number): T[] {
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= list.length ||
+    toIndex >= list.length ||
+    fromIndex === toIndex
+  ) {
+    return list;
+  }
+  const copy = [...list];
+  const [moved] = copy.splice(fromIndex, 1);
+  copy.splice(toIndex, 0, moved);
+  return copy;
+}
+
 interface AppStateContextValue {
   theme: ThemeMode;
   setTheme: (theme: ThemeMode) => void;
@@ -16,9 +34,19 @@ interface AppStateContextValue {
   favoriteTeams: FavoriteTeam[];
   toggleFavoriteTeam: (team: FavoriteTeam) => void;
   isFavoriteTeam: (teamId: number) => boolean;
+  reorderFavoriteTeams: (fromIndex: number, toIndex: number) => void;
+  moveFavoriteTeam: (teamId: number, direction: 'up' | 'down') => void;
   favoriteLeagues: string[];
   toggleFavoriteLeague: (shortcut: string) => void;
   isFavoriteLeague: (shortcut: string) => boolean;
+  reorderFavoriteLeagues: (fromIndex: number, toIndex: number) => void;
+  moveFavoriteLeague: (shortcut: string, direction: 'up' | 'down') => void;
+  leagueOrder: string[];
+  reorderLeagues: (fromIndex: number, toIndex: number) => void;
+  moveLeague: (shortcut: string, direction: 'up' | 'down') => void;
+  resetLeagueOrder: () => void;
+  pinFavoriteLeaguesFirst: boolean;
+  setPinFavoriteLeaguesFirst: (val: boolean) => void;
   homeLeagues: string[];
   toggleHomeLeague: (shortcut: string) => void;
   refreshIntervalSec: number;
@@ -35,6 +63,8 @@ const KEYS = {
   THEME: 'torpulse_theme_v1',
   FAV_TEAMS: 'torpulse_fav_teams_v1',
   FAV_LEAGUES: 'torpulse_fav_leagues_v1',
+  LEAGUE_ORDER: 'torpulse_league_order_v1',
+  PIN_FAV_LEAGUES: 'torpulse_pin_fav_leagues_v1',
   HOME_LEAGUES: 'torpulse_home_leagues_v1',
   REFRESH: 'torpulse_refresh_sec_v1',
 };
@@ -49,6 +79,36 @@ function readStorage<T>(key: string, fallback: T): T {
   }
 }
 
+function writeStorage(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function normalizeLeagueOrder(saved: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const sc of saved) {
+    const lower = sc.toLowerCase();
+    if (!seen.has(lower)) {
+      seen.add(lower);
+      // Match canonical casing from curated list when available
+      const canonical =
+        DEFAULT_LEAGUE_ORDER.find((d) => d.toLowerCase() === lower) ?? sc;
+      result.push(canonical);
+    }
+  }
+  for (const sc of DEFAULT_LEAGUE_ORDER) {
+    if (!seen.has(sc.toLowerCase())) {
+      seen.add(sc.toLowerCase());
+      result.push(sc);
+    }
+  }
+  return result;
+}
+
 export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeMode>(() =>
     readStorage<ThemeMode>(KEYS.THEME, 'dark')
@@ -58,6 +118,12 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
   const [favoriteLeagues, setFavoriteLeagues] = useState<string[]>(() =>
     readStorage<string[]>(KEYS.FAV_LEAGUES, ['bl1', 'bl2', 'dfb', 'ucl'])
+  );
+  const [leagueOrder, setLeagueOrder] = useState<string[]>(() =>
+    normalizeLeagueOrder(readStorage<string[]>(KEYS.LEAGUE_ORDER, DEFAULT_LEAGUE_ORDER))
+  );
+  const [pinFavoriteLeaguesFirst, setPinFavoriteLeaguesFirstState] = useState<boolean>(() =>
+    readStorage<boolean>(KEYS.PIN_FAV_LEAGUES, true)
   );
   const [homeLeagues, setHomeLeagues] = useState<string[]>(() =>
     readStorage<string[]>(KEYS.HOME_LEAGUES, DEFAULT_HOME_LEAGUES)
@@ -101,7 +167,7 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-      meta.setAttribute('content', resolvedTheme === 'dark' ? '#0B0D10' : '#FFFFFF');
+      meta.setAttribute('content', resolvedTheme === 'dark' ? '#0B0D10' : '#F3F5F8');
     }
   }, [resolvedTheme]);
 
@@ -131,16 +197,17 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const setTheme = useCallback((next: ThemeMode) => {
     setThemeState(next);
-    try {
-      localStorage.setItem(KEYS.THEME, JSON.stringify(next));
-    } catch {}
+    writeStorage(KEYS.THEME, next);
   }, []);
 
   const setRefreshIntervalSec = useCallback((sec: number) => {
     setRefreshIntervalState(sec);
-    try {
-      localStorage.setItem(KEYS.REFRESH, JSON.stringify(sec));
-    } catch {}
+    writeStorage(KEYS.REFRESH, sec);
+  }, []);
+
+  const setPinFavoriteLeaguesFirst = useCallback((val: boolean) => {
+    setPinFavoriteLeaguesFirstState(val);
+    writeStorage(KEYS.PIN_FAV_LEAGUES, val);
   }, []);
 
   const toggleFavoriteTeam = useCallback((team: FavoriteTeam) => {
@@ -149,9 +216,26 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const next = exists
         ? prev.filter((t) => t.teamId !== team.teamId)
         : [team, ...prev];
-      try {
-        localStorage.setItem(KEYS.FAV_TEAMS, JSON.stringify(next));
-      } catch {}
+      writeStorage(KEYS.FAV_TEAMS, next);
+      return next;
+    });
+  }, []);
+
+  const reorderFavoriteTeams = useCallback((fromIndex: number, toIndex: number) => {
+    setFavoriteTeams((prev) => {
+      const next = moveItem(prev, fromIndex, toIndex);
+      writeStorage(KEYS.FAV_TEAMS, next);
+      return next;
+    });
+  }, []);
+
+  const moveFavoriteTeam = useCallback((teamId: number, direction: 'up' | 'down') => {
+    setFavoriteTeams((prev) => {
+      const idx = prev.findIndex((t) => t.teamId === teamId);
+      if (idx === -1) return prev;
+      const target = direction === 'up' ? idx - 1 : idx + 1;
+      const next = moveItem(prev, idx, target);
+      writeStorage(KEYS.FAV_TEAMS, next);
       return next;
     });
   }, []);
@@ -167,10 +251,27 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const exists = prev.some((s) => s.toLowerCase() === lower);
       const next = exists
         ? prev.filter((s) => s.toLowerCase() !== lower)
-        : [shortcut, ...prev];
-      try {
-        localStorage.setItem(KEYS.FAV_LEAGUES, JSON.stringify(next));
-      } catch {}
+        : [...prev, shortcut];
+      writeStorage(KEYS.FAV_LEAGUES, next);
+      return next;
+    });
+  }, []);
+
+  const reorderFavoriteLeagues = useCallback((fromIndex: number, toIndex: number) => {
+    setFavoriteLeagues((prev) => {
+      const next = moveItem(prev, fromIndex, toIndex);
+      writeStorage(KEYS.FAV_LEAGUES, next);
+      return next;
+    });
+  }, []);
+
+  const moveFavoriteLeague = useCallback((shortcut: string, direction: 'up' | 'down') => {
+    setFavoriteLeagues((prev) => {
+      const idx = prev.findIndex((s) => s.toLowerCase() === shortcut.toLowerCase());
+      if (idx === -1) return prev;
+      const target = direction === 'up' ? idx - 1 : idx + 1;
+      const next = moveItem(prev, idx, target);
+      writeStorage(KEYS.FAV_LEAGUES, next);
       return next;
     });
   }, []);
@@ -181,6 +282,30 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [favoriteLeagues]
   );
 
+  const reorderLeagues = useCallback((fromIndex: number, toIndex: number) => {
+    setLeagueOrder((prev) => {
+      const next = moveItem(prev, fromIndex, toIndex);
+      writeStorage(KEYS.LEAGUE_ORDER, next);
+      return next;
+    });
+  }, []);
+
+  const moveLeague = useCallback((shortcut: string, direction: 'up' | 'down') => {
+    setLeagueOrder((prev) => {
+      const idx = prev.findIndex((s) => s.toLowerCase() === shortcut.toLowerCase());
+      if (idx === -1) return prev;
+      const target = direction === 'up' ? idx - 1 : idx + 1;
+      const next = moveItem(prev, idx, target);
+      writeStorage(KEYS.LEAGUE_ORDER, next);
+      return next;
+    });
+  }, []);
+
+  const resetLeagueOrder = useCallback(() => {
+    setLeagueOrder(DEFAULT_LEAGUE_ORDER);
+    writeStorage(KEYS.LEAGUE_ORDER, DEFAULT_LEAGUE_ORDER);
+  }, []);
+
   const toggleHomeLeague = useCallback((shortcut: string) => {
     setHomeLeagues((prev) => {
       const lower = shortcut.toLowerCase();
@@ -190,9 +315,7 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           ? prev.filter((s) => s.toLowerCase() !== lower)
           : prev
         : [...prev, shortcut];
-      try {
-        localStorage.setItem(KEYS.HOME_LEAGUES, JSON.stringify(next));
-      } catch {}
+      writeStorage(KEYS.HOME_LEAGUES, next);
       return next;
     });
   }, []);
@@ -214,9 +337,19 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         favoriteTeams,
         toggleFavoriteTeam,
         isFavoriteTeam,
+        reorderFavoriteTeams,
+        moveFavoriteTeam,
         favoriteLeagues,
         toggleFavoriteLeague,
         isFavoriteLeague,
+        reorderFavoriteLeagues,
+        moveFavoriteLeague,
+        leagueOrder,
+        reorderLeagues,
+        moveLeague,
+        resetLeagueOrder,
+        pinFavoriteLeaguesFirst,
+        setPinFavoriteLeaguesFirst,
         homeLeagues,
         toggleHomeLeague,
         refreshIntervalSec,

@@ -379,7 +379,10 @@ export const MatchDetailPage: React.FC = () => {
       </section>
 
       {/* Match Center Tabs */}
-      <div className="sticky top-14 z-20 bg-white/95 dark:bg-[#0B0D10]/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] px-3 flex items-center gap-1 overflow-x-auto no-scrollbar">
+      <div
+        className="sticky z-20 bg-white/95 dark:bg-[#0B0D10]/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] px-3 flex items-center gap-1 overflow-x-auto no-scrollbar"
+        style={{ top: 'calc(var(--ios-top-clearance) + 56px)' }}
+      >
         {TABS.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id;
           return (

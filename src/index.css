@@ -13,6 +13,8 @@
     --of-accent: #00C853;
     --of-accent-neon: #16A34A;
     --of-live: #00C853;
+    --ios-top-clearance: calc(env(safe-area-inset-top, 0px) + 18px);
+    --ios-bottom-clearance: max(env(safe-area-inset-bottom, 0px), 12px);
   }
 
   .dark {
@@ -51,12 +53,123 @@
   scrollbar-width: none;
 }
 
-/* Safe area helpers for iOS/Android PWA standalone mode */
+/* iOS safe-area top clearance (accounts for Dynamic Island + iOS top blur zone) */
 .pt-safe {
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: var(--ios-top-clearance);
 }
+
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: var(--ios-bottom-clearance);
+}
+
+.pb-tabbar {
+  padding-bottom: calc(104px + var(--ios-bottom-clearance));
+}
+
+/* iOS top translucent blur scrim under status bar / Dynamic Island */
+.ios-top-blur-scrim {
+  height: calc(env(safe-area-inset-top, 0px) + 22px);
+  background: linear-gradient(
+    to bottom,
+    rgba(243, 245, 248, 0.92) 0%,
+    rgba(243, 245, 248, 0.65) 55%,
+    rgba(243, 245, 248, 0) 100%
+  );
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+}
+
+.dark .ios-top-blur-scrim {
+  background: linear-gradient(
+    to bottom,
+    rgba(11, 13, 16, 0.94) 0%,
+    rgba(11, 13, 16, 0.68) 55%,
+    rgba(11, 13, 16, 0) 100%
+  );
+}
+
+/* Apple iOS 26 Liquid Glass Tab Bar */
+.liquid-glass-bar {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(245, 248, 252, 0.58) 100%
+  );
+  -webkit-backdrop-filter: blur(28px) saturate(210%) brightness(1.06);
+  backdrop-filter: blur(28px) saturate(210%) brightness(1.06);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow:
+    0 12px 32px rgba(15, 23, 42, 0.14),
+    0 2px 8px rgba(15, 23, 42, 0.08),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.06);
+}
+
+.dark .liquid-glass-bar {
+  background: linear-gradient(
+    180deg,
+    rgba(32, 39, 51, 0.62) 0%,
+    rgba(16, 20, 27, 0.54) 100%
+  );
+  -webkit-backdrop-filter: blur(30px) saturate(200%) brightness(1.1);
+  backdrop-filter: blur(30px) saturate(200%) brightness(1.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 14px 38px rgba(0, 0, 0, 0.55),
+    0 2px 10px rgba(0, 0, 0, 0.35),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Specular liquid glass sheen highlight across top edge */
+.liquid-glass-bar::before {
+  content: '';
+  position: absolute;
+  inset: 1px 12px auto 12px;
+  height: 1px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.75) 30%,
+    rgba(255, 255, 255, 0.9) 50%,
+    rgba(255, 255, 255, 0.75) 70%,
+    transparent 100%
+  );
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.dark .liquid-glass-bar::before {
+  opacity: 0.35;
+}
+
+/* Active tab inner liquid-glass capsule */
+.liquid-glass-pill {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.85) 0%,
+    rgba(235, 241, 248, 0.65) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    0 3px 10px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+.dark .liquid-glass-pill {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.07) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 /* Live pulsing indicator */

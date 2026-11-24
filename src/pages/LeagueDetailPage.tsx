@@ -11,7 +11,6 @@ import {
   Table2,
   Users,
   CalendarDays,
-  Filter,
 } from 'lucide-react';
 import { openLigaApi } from '../api/openligadb';
 import { getCuratedLeague } from '../config/leagues';
@@ -61,7 +60,6 @@ export const LeagueDetailPage: React.FC = () => {
   const [selectedGroupOrder, setSelectedGroupOrder] = useState<number | null>(null);
   const [matchdayMatches, setMatchdayMatches] = useState<Match[]>([]);
   const [seasonMatches, setSeasonMatches] = useState<Match[]>([]);
-  const [teamFilter, setTeamFilter] = useState<string>('');
   const [nextMatch, setNextMatch] = useState<Match | null>(null);
   const [lastMatch, setLastMatch] = useState<Match | null>(null);
 
@@ -136,7 +134,6 @@ export const LeagueDetailPage: React.FC = () => {
         setNextMatch(nextRes && nextRes.matchID ? nextRes : null);
         setLastMatch(lastRes && lastRes.matchID ? lastRes : null);
 
-        // Determine initial group
         const validOrder =
           currentGroupRes &&
           sortedGroups.some((g) => g.groupOrderID === currentGroupRes.groupOrderID)
@@ -144,7 +141,6 @@ export const LeagueDetailPage: React.FC = () => {
             : sortedGroups[0]?.groupOrderID ?? 1;
         setSelectedGroupOrder(validOrder);
 
-        // Fetch matchday matches
         const initialMatches = seasonMatchesRes.length
           ? seasonMatchesRes.filter((m) => m.group?.groupOrderID === validOrder)
           : await openLigaApi
@@ -157,7 +153,6 @@ export const LeagueDetailPage: React.FC = () => {
           )
         );
 
-        // Fetch league-specific resultInfos if we know leagueId
         const resolvedLeagueId =
           leagueMeta?.leagueId ??
           seasonMatchesRes[0]?.leagueId ??
@@ -176,14 +171,12 @@ export const LeagueDetailPage: React.FC = () => {
   );
 
   useEffect(() => {
-    setTeamFilter('');
     loadLeagueData(false);
   }, [loadLeagueData]);
 
-  // Switch matchday
+  // Switch matchday cleanly without filter bar
   const selectGroup = async (orderId: number) => {
     setSelectedGroupOrder(orderId);
-    setTeamFilter('');
     if (seasonMatches.length > 0) {
       const subset = seasonMatches
         .filter((m) => m.group?.groupOrderID === orderId)
@@ -202,25 +195,6 @@ export const LeagueDetailPage: React.FC = () => {
     }
   };
 
-  // Team filter within season (uses /getmatchdata/{shortcut}/{season}/{teamFilter}!)
-  const handleTeamFilterChange = async (filterStr: string) => {
-    setTeamFilter(filterStr);
-    if (!filterStr) {
-      if (selectedGroupOrder !== null) selectGroup(selectedGroupOrder);
-      return;
-    }
-    setMatchesLoading(true);
-    try {
-      const data = await openLigaApi.getTeamSeasonMatches(shortcut, season, filterStr);
-      setMatchdayMatches(
-        [...data].sort((a, b) => (getKickoffDate(a)?.getTime() ?? 0) - (getKickoffDate(b)?.getTime() ?? 0))
-      );
-    } finally {
-      setMatchesLoading(false);
-    }
-  };
-
-  // Compute form map for standings table
   const formMap = useMemo(() => {
     const map = new Map<number, FormResult[]>();
     if (!seasonMatches.length) return map;
@@ -231,7 +205,6 @@ export const LeagueDetailPage: React.FC = () => {
     return map;
   }, [seasonMatches, tableRows]);
 
-  // Active standings split (Overall / Home / Away / Group)
   const displayedTable = useMemo(() => {
     if (tableSplit === 'group' && groupTableRows.length > 0) return groupTableRows;
     if (tableSplit === 'home' && seasonMatches.length > 0) {
@@ -245,13 +218,11 @@ export const LeagueDetailPage: React.FC = () => {
     return [];
   }, [tableSplit, tableRows, groupTableRows, seasonMatches]);
 
-  // Enriched top scorers (cross-referenced with season goals for team crests + penalties)
   const enrichedScorers = useMemo(
     () => enrichGoalGetters(goalGetters, seasonMatches),
     [goalGetters, seasonMatches]
   );
 
-  // League season statistics for Info tab
   const seasonStats = useMemo(() => {
     const finished = seasonMatches.filter((m) => m.matchIsFinished);
     let totalGoals = 0;
@@ -292,8 +263,8 @@ export const LeagueDetailPage: React.FC = () => {
 
   return (
     <div className="flex flex-col">
-      {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#0B0D10]/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
+      {/* Header with iOS top blur clearance */}
+      <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0B0D10]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
         <div className="px-3.5 py-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <button
@@ -385,75 +356,53 @@ export const LeagueDetailPage: React.FC = () => {
           activeTab === 'table' ? <TableSkeleton /> : <LeagueGroupSkeleton />
         ) : activeTab === 'matches' ? (
           <div className="space-y-3.5 animate-fade-up">
-            {/* Matchday Selector & Team Filter */}
-            <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] p-3 space-y-2.5">
-              {groups.length > 0 && !teamFilter && (
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    disabled={currentGroupIdx <= 0}
-                    onClick={() =>
-                      currentGroupIdx > 0 && selectGroup(groups[currentGroupIdx - 1].groupOrderID)
-                    }
-                    className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
-                    aria-label="Vorheriger Spieltag"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
+            {/* Clean Matchday Navigator (no extra filter bar) */}
+            {groups.length > 0 && (
+              <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] p-2.5 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  disabled={currentGroupIdx <= 0}
+                  onClick={() =>
+                    currentGroupIdx > 0 && selectGroup(groups[currentGroupIdx - 1].groupOrderID)
+                  }
+                  className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                  aria-label="Vorheriger Spieltag"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
 
-                  <select
-                    value={selectedGroupOrder ?? ''}
-                    onChange={(e) => selectGroup(Number(e.target.value))}
-                    aria-label="Spieltag wählen"
-                    className="flex-1 text-center text-sm font-extrabold bg-transparent text-slate-950 dark:text-white focus:outline-none cursor-pointer"
-                  >
-                    {groups.map((g) => (
-                      <option
-                        key={g.groupID}
-                        value={g.groupOrderID}
-                        className="bg-white dark:bg-[#14181F]"
-                      >
-                        {g.groupName}
-                      </option>
-                    ))}
-                  </select>
+                <select
+                  value={selectedGroupOrder ?? ''}
+                  onChange={(e) => selectGroup(Number(e.target.value))}
+                  aria-label="Spieltag wählen"
+                  className="flex-1 text-center text-sm font-extrabold bg-transparent text-slate-950 dark:text-white focus:outline-none cursor-pointer"
+                >
+                  {groups.map((g) => (
+                    <option
+                      key={g.groupID}
+                      value={g.groupOrderID}
+                      className="bg-white dark:bg-[#14181F]"
+                    >
+                      {g.groupName}
+                    </option>
+                  ))}
+                </select>
 
-                  <button
-                    type="button"
-                    disabled={currentGroupIdx < 0 || currentGroupIdx >= groups.length - 1}
-                    onClick={() =>
-                      currentGroupIdx >= 0 &&
-                      currentGroupIdx < groups.length - 1 &&
-                      selectGroup(groups[currentGroupIdx + 1].groupOrderID)
-                    }
-                    className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
-                    aria-label="Nächster Spieltag"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {/* Team Filter Dropdown (uses /getmatchdata/{shortcut}/{season}/{teamFilter}) */}
-              {teams.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <select
-                    value={teamFilter}
-                    onChange={(e) => handleTeamFilterChange(e.target.value)}
-                    aria-label="Nach Verein filtern"
-                    className="flex-1 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#0B0D10] border border-slate-200/80 dark:border-white/[0.07] text-xs font-semibold text-slate-800 dark:text-slate-200"
-                  >
-                    <option value="">Alle Vereine (nach Spieltag)</option>
-                    {teams.map((t) => (
-                      <option key={t.teamId} value={t.shortName || t.teamName || ''}>
-                        Alle Saisonspiele: {t.teamName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
+                <button
+                  type="button"
+                  disabled={currentGroupIdx < 0 || currentGroupIdx >= groups.length - 1}
+                  onClick={() =>
+                    currentGroupIdx >= 0 &&
+                    currentGroupIdx < groups.length - 1 &&
+                    selectGroup(groups[currentGroupIdx + 1].groupOrderID)
+                  }
+                  className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                  aria-label="Nächster Spieltag"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {/* Matches List */}
             {matchesLoading ? (
@@ -464,7 +413,7 @@ export const LeagueDetailPage: React.FC = () => {
                   matchdayMatches.map((m) => <MatchCard key={m.matchID} match={m} showDate />)
                 ) : (
                   <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                    Keine Spiele für diese Auswahl gefunden.
+                    Keine Spiele für diesen Spieltag gefunden.
                   </div>
                 )}
               </div>
@@ -494,14 +443,15 @@ export const LeagueDetailPage: React.FC = () => {
           </div>
         ) : activeTab === 'table' ? (
           <div className="space-y-3 animate-fade-up">
-            {/* Split Selector: Gesamt / Heim / Auswärts / Gruppe */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {(
                 [
                   { id: 'all', label: 'Gesamt' },
                   { id: 'home', label: 'Heimtabelle' },
                   { id: 'away', label: 'Auswärtstabelle' },
-                  ...(groupTableRows.length > 0 ? [{ id: 'group' as const, label: 'Gruppentabelle' }] : []),
+                  ...(groupTableRows.length > 0
+                    ? [{ id: 'group' as const, label: 'Gruppentabelle' }]
+                    : []),
                 ] as { id: TableSplit; label: string }[]
               ).map((s) => (
                 <button
@@ -666,7 +616,6 @@ export const LeagueDetailPage: React.FC = () => {
             )}
           </div>
         ) : (
-          /* Info & Season Stats Tab */
           <div className="space-y-3.5 animate-fade-up">
             <div className="grid grid-cols-2 gap-2.5">
               <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] p-4">

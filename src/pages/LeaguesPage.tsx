@@ -1,6 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Filter, Globe, Search, Star, Trophy } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Check,
+  ChevronRight,
+  Filter,
+  Globe,
+  GripVertical,
+  RotateCcw,
+  Search,
+  Star,
+  Trophy,
+} from 'lucide-react';
 import { openLigaApi } from '../api/openligadb';
 import { CURATED_LEAGUES, isLikelyTestLeague } from '../config/leagues';
 import { useAppState } from '../context/AppStateContext';
@@ -10,12 +23,26 @@ type CategoryTab = 'top' | 'germany' | 'europe' | 'international' | 'women' | 'a
 
 export const LeaguesPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isFavoriteLeague, toggleFavoriteLeague } = useAppState();
+  const {
+    isFavoriteLeague,
+    toggleFavoriteLeague,
+    favoriteLeagues,
+    leagueOrder,
+    reorderLeagues,
+    moveLeague,
+    resetLeagueOrder,
+    pinFavoriteLeaguesFirst,
+    setPinFavoriteLeaguesFirst,
+  } = useAppState();
 
   const [tab, setTab] = useState<CategoryTab>('top');
+  const [sortMode, setSortMode] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   const [allLeagues, setAllLeagues] = useState<League[]>([]);
   const [sports, setSports] = useState<Sport[]>([]);
-  const [selectedSportId, setSelectedSportId] = useState<number>(1); // 1 = Fußball
+  const [selectedSportId, setSelectedSportId] = useState<number>(1);
   const [selectedSeason, setSelectedSeason] = useState<string>('2026');
   const [hideTestLeagues, setHideTestLeagues] = useState(true);
   const [query, setQuery] = useState('');
@@ -42,10 +69,31 @@ export const LeaguesPage: React.FC = () => {
     };
   }, [tab]);
 
+  // Sort curated leagues strictly according to user's custom leagueOrder (+ optional favorite pinning)
+  const sortedCuratedAll = useMemo(() => {
+    const orderIdx = (sc: string) => {
+      const idx = leagueOrder.findIndex((o) => o.toLowerCase() === sc.toLowerCase());
+      return idx === -1 ? 999 : idx;
+    };
+    const favIdx = (sc: string) =>
+      favoriteLeagues.findIndex((f) => f.toLowerCase() === sc.toLowerCase());
+
+    return [...CURATED_LEAGUES].sort((a, b) => {
+      if (pinFavoriteLeaguesFirst && !sortMode) {
+        const fa = favIdx(a.shortcut);
+        const fb = favIdx(b.shortcut);
+        if (fa !== -1 && fb === -1) return -1;
+        if (fa === -1 && fb !== -1) return 1;
+        if (fa !== -1 && fb !== -1) return fa - fb;
+      }
+      return orderIdx(a.shortcut) - orderIdx(b.shortcut);
+    });
+  }, [leagueOrder, favoriteLeagues, pinFavoriteLeaguesFirst, sortMode]);
+
   const curatedFiltered = useMemo(() => {
-    if (tab === 'top') return CURATED_LEAGUES;
-    return CURATED_LEAGUES.filter((l) => l.category === tab);
-  }, [tab]);
+    if (sortMode || tab === 'top') return sortedCuratedAll;
+    return sortedCuratedAll.filter((l) => l.category === tab);
+  }, [tab, sortMode, sortedCuratedAll]);
 
   const availableSeasons = useMemo(() => {
     const set = new Set<string>();
@@ -70,7 +118,11 @@ export const LeaguesPage: React.FC = () => {
         }
         return true;
       })
-      .sort((a, b) => Number(b.leagueSeason ?? 0) - Number(a.leagueSeason ?? 0) || (a.leagueName ?? '').localeCompare(b.leagueName ?? ''))
+      .sort(
+        (a, b) =>
+          Number(b.leagueSeason ?? 0) - Number(a.leagueSeason ?? 0) ||
+          (a.leagueName ?? '').localeCompare(b.leagueName ?? '')
+      )
       .slice(0, 120);
   }, [allLeagues, selectedSportId, selectedSeason, hideTestLeagues, query]);
 
@@ -83,104 +135,238 @@ export const LeaguesPage: React.FC = () => {
     { id: 'all', label: 'Alle (OpenLigaDB)' },
   ];
 
+  const handleDrop = (targetIdx: number) => {
+    if (dragIndex !== null && dragIndex !== targetIdx) {
+      reorderLeagues(dragIndex, targetIdx);
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
   return (
     <div className="flex flex-col">
-      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#0B0D10]/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
-        <div className="px-4 h-14 flex items-center justify-between">
+      <header className="sticky top-0 z-30 bg-white/90 dark:bg-[#0B0D10]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/[0.07] pt-safe">
+        <div className="px-4 h-14 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Trophy className="w-5 h-5 text-emerald-600 dark:text-[#C8FF00]" />
             <h1 className="text-lg font-black tracking-tight text-slate-950 dark:text-white">
               Wettbewerbe
             </h1>
           </div>
-          <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-[#14181F] text-slate-500 dark:text-slate-400">
-            OpenLigaDB
-          </span>
-        </div>
 
-        <div className="px-4 pb-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar">
-          {TABS.map((t) => (
+          {tab !== 'all' && (
             <button
-              key={t.id}
               type="button"
-              onClick={() => setTab(t.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                tab === t.id
+              onClick={() => {
+                setSortMode((v) => !v);
+                setTab('top');
+              }}
+              className={`h-8 px-3 rounded-full text-xs font-extrabold flex items-center gap-1.5 transition-all ${
+                sortMode
                   ? 'bg-slate-950 dark:bg-[#C8FF00] text-white dark:text-black'
-                  : 'bg-slate-100 dark:bg-[#14181F] text-slate-700 dark:text-slate-300 border border-slate-200/70 dark:border-white/[0.07]'
+                  : 'bg-slate-100 dark:bg-[#1B212B] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/10'
               }`}
             >
-              {t.label}
+              {sortMode ? (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Fertig</span>
+                </>
+              ) : (
+                <>
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  <span>Sortieren</span>
+                </>
+              )}
             </button>
-          ))}
+          )}
         </div>
+
+        {!sortMode && (
+          <div className="px-4 pb-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                  tab === t.id
+                    ? 'bg-slate-950 dark:bg-[#C8FF00] text-white dark:text-black'
+                    : 'bg-slate-100 dark:bg-[#14181F] text-slate-700 dark:text-slate-300 border border-slate-200/70 dark:border-white/[0.07]'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       <div className="px-3.5 py-4 space-y-4">
-        {tab !== 'all' ? (
+        {sortMode && (
+          <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-emerald-500/35 dark:border-[#C8FF00]/30 p-3.5 space-y-3 animate-fade-up">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                Ziehe Ligen per Drag & Drop oder nutze die Pfeile – gilt für Spiele- & Ligen-Tab.
+              </p>
+              <button
+                type="button"
+                onClick={resetLeagueOrder}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-[#1B212B] text-[11px] font-bold flex items-center gap-1 shrink-0 text-slate-700 dark:text-slate-200"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Reset
+              </button>
+            </div>
+            <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0B0D10] text-xs font-semibold cursor-pointer">
+              <span className="flex items-center gap-1.5">
+                <Star className="w-3.5 h-3.5 text-amber-500 dark:text-[#C8FF00] fill-current" />
+                Favoriten-Ligen automatisch ganz oben anzeigen
+              </span>
+              <input
+                type="checkbox"
+                checked={pinFavoriteLeaguesFirst}
+                onChange={(e) => setPinFavoriteLeaguesFirst(e.target.checked)}
+                className="accent-emerald-500 w-4 h-4"
+              />
+            </label>
+          </div>
+        )}
+
+        {tab !== 'all' || sortMode ? (
           <div className="grid grid-cols-1 gap-2.5 animate-fade-up">
-            {curatedFiltered.map((league) => {
+            {curatedFiltered.map((league, idx) => {
               const fav = isFavoriteLeague(league.shortcut);
+              const isDragTarget = sortMode && dragOverIndex === idx && dragIndex !== idx;
               return (
                 <div
                   key={league.shortcut}
-                  className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden flex items-center hover:border-emerald-500/40 dark:hover:border-[#C8FF00]/40 transition-colors"
+                  draggable={sortMode}
+                  onDragStart={() => setDragIndex(idx)}
+                  onDragOver={(e) => {
+                    if (!sortMode) return;
+                    e.preventDefault();
+                    setDragOverIndex(idx);
+                  }}
+                  onDragLeave={() => setDragOverIndex(null)}
+                  onDrop={() => handleDrop(idx)}
+                  onDragEnd={() => {
+                    setDragIndex(null);
+                    setDragOverIndex(null);
+                  }}
+                  className={`rounded-2xl bg-white dark:bg-[#14181F] border overflow-hidden flex items-center transition-all ${
+                    isDragTarget
+                      ? 'border-emerald-500 dark:border-[#C8FF00] scale-[1.01]'
+                      : 'border-slate-200/80 dark:border-white/[0.08] hover:border-emerald-500/40 dark:hover:border-[#C8FF00]/40'
+                  }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      navigate(`/league/${encodeURIComponent(league.shortcut)}/${league.season}`)
-                    }
-                    className="flex-1 px-3.5 py-3.5 flex items-center gap-3 text-left min-w-0"
-                  >
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 border border-slate-200/60 dark:border-white/[0.08]"
-                      style={{ backgroundColor: `${league.color}18` }}
-                    >
-                      {league.flag}
+                  {sortMode ? (
+                    <div className="flex-1 px-3 py-3 flex items-center gap-2.5 min-w-0 cursor-grab active:cursor-grabbing">
+                      <GripVertical className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span className="w-5 text-xs font-black tabular-nums text-slate-400 shrink-0">
+                        {idx + 1}.
+                      </span>
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 border border-slate-200/60 dark:border-white/[0.08]"
+                        style={{ backgroundColor: `${league.color}18` }}
+                      >
+                        {league.flag}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <h2 className="text-sm font-extrabold text-slate-950 dark:text-white truncate">
+                            {league.name}
+                          </h2>
+                          {fav && (
+                            <Star className="w-3.5 h-3.5 text-amber-500 dark:text-[#C8FF00] fill-current shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {league.country}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moveLeague(league.shortcut, 'up')}
+                          aria-label={`${league.name} nach oben`}
+                          className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === curatedFiltered.length - 1}
+                          onClick={() => moveLeague(league.shortcut, 'down')}
+                          aria-label={`${league.name} nach unten`}
+                          className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#1B212B] flex items-center justify-center disabled:opacity-30"
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-sm font-extrabold text-slate-950 dark:text-white truncate">
-                        {league.name}
-                      </h2>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {league.country} • Saison {league.season}/{String(league.season + 1).slice(-2)}
-                      </p>
-                    </div>
-                  </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(`/league/${encodeURIComponent(league.shortcut)}/${league.season}`)
+                        }
+                        className="flex-1 px-3.5 py-3.5 flex items-center gap-3 text-left min-w-0"
+                      >
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 border border-slate-200/60 dark:border-white/[0.08]"
+                          style={{ backgroundColor: `${league.color}18` }}
+                        >
+                          {league.flag}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h2 className="text-sm font-extrabold text-slate-950 dark:text-white truncate">
+                            {league.name}
+                          </h2>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {league.country} • Saison {league.season}/{String(league.season + 1).slice(-2)}
+                          </p>
+                        </div>
+                      </button>
 
-                  <div className="flex items-center pr-2.5 gap-1">
-                    <button
-                      type="button"
-                      onClick={() => toggleFavoriteLeague(league.shortcut)}
-                      aria-label={fav ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors"
-                    >
-                      <Star
-                        className={`w-4 h-4 ${
-                          fav
-                            ? 'text-amber-500 dark:text-[#C8FF00] fill-current'
-                            : 'text-slate-400'
-                        }`}
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigate(`/league/${encodeURIComponent(league.shortcut)}/${league.season}`)
-                      }
-                      aria-label={`${league.name} öffnen`}
-                      className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
+                      <div className="flex items-center pr-2.5 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleFavoriteLeague(league.shortcut)}
+                          aria-label={fav ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}
+                          className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors"
+                        >
+                          <Star
+                            className={`w-4 h-4 ${
+                              fav
+                                ? 'text-amber-500 dark:text-[#C8FF00] fill-current'
+                                : 'text-slate-400'
+                            }`}
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            navigate(
+                              `/league/${encodeURIComponent(league.shortcut)}/${league.season}`
+                            )
+                          }
+                          aria-label={`${league.name} öffnen`}
+                          className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}
           </div>
         ) : (
-          /* Full OpenLigaDB Explorer (all leagues, seasons & sports) */
+          /* Full OpenLigaDB Explorer */
           <div className="space-y-3 animate-fade-up">
             <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] p-3.5 space-y-3">
               <div className="relative">
