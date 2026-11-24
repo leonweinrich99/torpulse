@@ -4,6 +4,7 @@ import { Star } from 'lucide-react';
 import type { Match } from '../types/openligadb';
 import {
   deriveMatchScore,
+  formatKickoffTime,
   formatShortDate,
   getDisplayTeamName,
   getKickoffDate,
@@ -85,21 +86,35 @@ export const MatchCard: React.FC<MatchCardProps> = ({
         {/* Status / Time column */}
         <div className="w-12 shrink-0 flex flex-col items-center justify-center">
           {isLive ? (
-            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-[#00E676] font-extrabold text-[11px] tabular-nums">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-[#00E676] animate-live-dot" />
-              <span>{derived.statusLabel}</span>
-            </div>
+            <>
+              <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-[#00E676] font-extrabold text-[11px] tabular-nums">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-[#00E676] animate-live-dot" />
+                <span>{derived.statusLabel}</span>
+              </div>
+              {kickoff && (
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 tabular-nums mt-0.5">
+                  {formatKickoffTime(kickoff)}
+                </span>
+              )}
+            </>
           ) : isFinished ? (
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-              {derived.statusLabel}
-            </span>
+            <>
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide leading-tight">
+                {derived.statusLabel}
+              </span>
+              {kickoff && (
+                <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tabular-nums mt-0.5 leading-tight">
+                  {formatKickoffTime(kickoff)}
+                </span>
+              )}
+            </>
           ) : (
             <span className="text-xs font-bold text-slate-800 dark:text-slate-200 tabular-nums">
               {derived.statusLabel}
             </span>
           )}
           {derived.halfTimeTeam1 !== null && derived.halfTimeTeam2 !== null && !isUpcoming && (
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 tabular-nums mt-0.5">
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 tabular-nums mt-0.5 leading-tight">
               ({derived.halfTimeTeam1}:{derived.halfTimeTeam2})
             </span>
           )}
