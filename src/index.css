@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --of-bg: #F3F5F8;
+    --of-surface: #FFFFFF;
+    --of-surface-elevated: #F8FAFC;
+    --of-border: rgba(15, 23, 42, 0.08);
+    --of-text: #0F172A;
+    --of-text-muted: #64748B;
+    --of-accent: #00C853;
+    --of-accent-neon: #16A34A;
+    --of-live: #00C853;
+  }
+
+  .dark {
+    --of-bg: #0B0D10;
+    --of-surface: #14181F;
+    --of-surface-elevated: #1B212B;
+    --of-border: rgba(255, 255, 255, 0.08);
+    --of-text: #F8FAFC;
+    --of-text-muted: #8B95A5;
+    --of-accent: #C8FF00;
+    --of-accent-neon: #C8FF00;
+    --of-live: #00E676;
+  }
+
+  html,
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--of-bg);
+    color: var(--of-text);
+    overscroll-behavior-y: contain;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Tabular numbers for crisp non-jittering scores & standings */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hide scrollbars cleanly for horizontal pill carousels */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Safe area helpers for iOS/Android PWA standalone mode */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Live pulsing indicator */
+@keyframes live-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(1.25);
+  }
+}
+
+.animate-live-dot {
+  animation: live-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Smooth fade-in for cards and views */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.22s ease-out both;
+}
