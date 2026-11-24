@@ -30,6 +30,7 @@ import {
   computeTeamForm,
   enrichGoalGetters,
   getKickoffDate,
+  groupMatchesByDay,
 } from '../utils/matchUtils';
 import { MatchCard } from '../components/MatchCard';
 import { StandingsTable } from '../components/StandingsTable';
@@ -404,18 +405,36 @@ export const LeagueDetailPage: React.FC = () => {
               </div>
             )}
 
-            {/* Matches List */}
+            {/* Matches grouped by Weekday (e.g. Freitag, Samstag, Sonntag) without redundant matchday label */}
             {matchesLoading ? (
               <LeagueGroupSkeleton />
-            ) : (
-              <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden divide-y divide-slate-100 dark:divide-white/[0.05]">
-                {matchdayMatches.length > 0 ? (
-                  matchdayMatches.map((m) => <MatchCard key={m.matchID} match={m} showDate />)
-                ) : (
-                  <div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                    Keine Spiele für diesen Spieltag gefunden.
+            ) : matchdayMatches.length > 0 ? (
+              <div className="space-y-3">
+                {groupMatchesByDay(matchdayMatches).map((dayGroup) => (
+                  <div
+                    key={dayGroup.dateKey}
+                    className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] overflow-hidden"
+                  >
+                    <div className="px-3.5 py-2 bg-slate-50/90 dark:bg-white/[0.03] border-b border-slate-100 dark:border-white/[0.06] flex items-center justify-between">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                        {dayGroup.fullLabel}
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-200/70 dark:bg-white/[0.07] text-slate-600 dark:text-slate-400 tabular-nums">
+                        {dayGroup.matches.length}{' '}
+                        {dayGroup.matches.length === 1 ? 'Spiel' : 'Spiele'}
+                      </span>
+                    </div>
+                    <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
+                      {dayGroup.matches.map((m) => (
+                        <MatchCard key={m.matchID} match={m} />
+                      ))}
+                    </div>
                   </div>
-                )}
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-white dark:bg-[#14181F] border border-slate-200/80 dark:border-white/[0.08] p-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                Keine Spiele für diesen Spieltag gefunden.
               </div>
             )}
 

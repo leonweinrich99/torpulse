@@ -23,6 +23,7 @@ import {
   deriveMatchScore,
   generateDateStrip,
   getKickoffDate,
+  groupMatchesByDay,
   toLocalDateKey,
 } from '../utils/matchUtils';
 import { MatchCard } from '../components/MatchCard';
@@ -691,18 +692,34 @@ export const MatchesPage: React.FC = () => {
                     </button>
                   </div>
 
-                  {!isCollapsed && (
-                    <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
-                      {bundle.matches.map((match) => (
-                        <MatchCard
-                          key={match.matchID}
-                          match={match}
-                          showDate={feedMode === 'matchday'}
-                          nowMs={nowMs}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  {!isCollapsed &&
+                    (feedMode === 'matchday' ? (
+                      <div>
+                        {groupMatchesByDay(bundle.matches).map((dayGroup) => (
+                          <div key={dayGroup.dateKey}>
+                            <div className="px-3.5 py-1.5 bg-slate-100/70 dark:bg-white/[0.025] border-y border-slate-100 dark:border-white/[0.05] first:border-t-0 flex items-center justify-between">
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                {dayGroup.fullLabel}
+                              </span>
+                              <span className="text-[10px] font-semibold text-slate-400 tabular-nums">
+                                {dayGroup.matches.length}
+                              </span>
+                            </div>
+                            <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
+                              {dayGroup.matches.map((match) => (
+                                <MatchCard key={match.matchID} match={match} nowMs={nowMs} />
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-100 dark:divide-white/[0.05]">
+                        {bundle.matches.map((match) => (
+                          <MatchCard key={match.matchID} match={match} nowMs={nowMs} />
+                        ))}
+                      </div>
+                    ))}
                 </section>
               );
             })}

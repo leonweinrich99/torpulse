@@ -539,3 +539,71 @@ export function getDisplayTeamName(
   }
   return team.teamName?.trim() || team.shortName?.trim() || 'Unbekannt';
 }
+
+export interface MatchDayGroup {
+  dateKey: string;
+  weekday: string;
+  dateLabel: string;
+  fullLabel: string;
+  matches: Match[];
+}
+
+/**
+ * Groups matches chronologically by local calendar day (e.g. Freitag, Samstag, Sonntag).
+ */
+export function groupMatchesByDay(matches: Match[]): MatchDayGroup[] {
+  const sorted = [...matches].sort(
+    (a, b) => (getKickoffDate(a)?.getTime() ?? 0) - (getKickoffDate(b)?.getTime() ?? 0)
+  );
+
+  const map = new Map<string, MatchDayGroup>();
+  const todayKey = toLocalDateKey(new Date());
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = toLocalDateKey(tomorrow);
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayKey = toLocalDateKey(yesterday);
+
+  for (const m of sorted) {
+    const kickoff = getKickoffDate(m);
+    if (!kickoff) {
+      const key = 'tbd';
+      if (!map.has(key)) {
+        map.set(key, {
+          dateKey: key,
+          weekday: 'Termin offen',
+          dateLabel: '',
+          fullLabel: 'Termin offen',
+          matches: [],
+        });
+      }
+      map.get(key)!.matches.push(m);
+      continue;
+    }
+
+    const key = toLocalDateKey(kickoff);
+    if (!map.has(key)) {
+      const weekdayRaw = kickoff.toLocaleDateString('de-DE', { weekday: 'long' });
+      const dateLabel = kickoff.toLocaleDateString('de-DE', {
+        day: '2-digit',
+        month: 'short',
+      });
+      let prefix = weekdayRaw;
+      if (key === todayKey) prefix = `Heute · ${weekdayRaw}`;
+      else if (key === tomorrowKey) prefix = `Morgen · ${weekdayRaw}`;
+      else if (key === yesterdayKey) prefix = `Gestern · ${weekdayRaw}`;
+
+      map.set(key, {
+        dateKey: key,
+        weekday: weekdayRaw,
+        dateLabel,
+        fullLabel: `${prefix}, ${dateLabel}`,
+        matches: [],
+      });
+    }
+    map.get(key)!.matches.push(m);
+  }
+
+  return Array.from(map.values());
+}

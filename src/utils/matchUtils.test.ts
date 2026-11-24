@@ -9,6 +9,7 @@ import {
   enrichGoalGetters,
   formatAttendance,
   formatCountdown,
+  groupMatchesByDay,
 } from './matchUtils';
 
 function makeMatch(overrides: Partial<Match> = {}): Match {
@@ -266,5 +267,21 @@ describe('computeTeamForm, computeSplitTable, computeH2HStats', () => {
     expect(formatAttendance(75024)).toContain('Zuschauer');
     const future = new Date(Date.now() + 95 * 60_000);
     expect(formatCountdown(future)).toMatch(/in 1h 3[45]m/);
+  });
+
+  it('groups matches chronologically by weekday (Freitag, Samstag, Sonntag)', () => {
+    const fri = makeMatch({ matchID: 1, matchDateTimeUTC: '2026-11-20T19:30:00Z' });
+    const sat1 = makeMatch({ matchID: 2, matchDateTimeUTC: '2026-11-21T14:30:00Z' });
+    const sat2 = makeMatch({ matchID: 3, matchDateTimeUTC: '2026-11-21T17:30:00Z' });
+    const sun = makeMatch({ matchID: 4, matchDateTimeUTC: '2026-11-22T14:30:00Z' });
+
+    const groups = groupMatchesByDay([sun, sat2, fri, sat1]);
+    expect(groups).toHaveLength(3);
+    expect(groups[0].weekday).toBe('Freitag');
+    expect(groups[0].matches).toHaveLength(1);
+    expect(groups[1].weekday).toBe('Samstag');
+    expect(groups[1].matches).toHaveLength(2);
+    expect(groups[2].weekday).toBe('Sonntag');
+    expect(groups[2].matches).toHaveLength(1);
   });
 });

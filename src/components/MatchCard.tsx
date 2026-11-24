@@ -71,11 +71,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
       {(showLeagueBadge || showDate) && (
         <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
           <span className="truncate font-medium">
-            {showLeagueBadge
-              ? `${match.leagueName || match.leagueShortcut || ''}${
-                  match.group?.groupName ? ` • ${match.group.groupName}` : ''
-                }`
-              : match.group?.groupName || ''}
+            {showLeagueBadge ? match.leagueName || match.leagueShortcut || '' : ''}
           </span>
           {showDate && kickoff && (
             <span className="shrink-0 ml-2 tabular-nums">
